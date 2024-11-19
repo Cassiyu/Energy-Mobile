@@ -1,23 +1,17 @@
 import React, { useState, useEffect } from 'react';
 import { View, Text, StyleSheet, FlatList } from 'react-native';
-import { ref, get } from "firebase/database";
-import { database, auth } from '../api/firebaseConfig';
+import axios from 'axios';
 import CustomPicker from '../components/CustomPicker';
-import classifyDeviceEfficiency from '../mock/efficiencyClassification';
+import classifyDeviceEfficiency from '../utils/efficiencyClassification';
 import IconLeft from '../components/IconLeft';
 import LogoText from '../components/LogoText';
 import { useNavigation } from '@react-navigation/native';
 import { StackNavigationProp } from '@react-navigation/stack';
-import { RootStackParamsList } from '../types/navigation';
+import { DeviceAnalysis, RootStackParamsList } from '../types/navigation';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import Button from '../components/Button';
 
-interface DeviceAnalysis {
-  device_name: string;
-  device_type: string;
-  device_current_watts: number;
-  estimated_usage_hours: string;
-  energy_usage_monthly: number;
-  efficiency_class: string;
-}
+const BASE_URL = 'http://192.168.0.147:8080';
 
 const EfficiencyAnalysis = () => {
   const [devicesAnalysis, setDevicesAnalysis] = useState<DeviceAnalysis[]>([]);
@@ -26,72 +20,89 @@ const EfficiencyAnalysis = () => {
   const navigation = useNavigation<StackNavigationProp<RootStackParamsList>>();
 
   useEffect(() => {
-    const loadDevicesFromFirebase = async () => {
-      try {
-        const userId = auth.currentUser?.uid;
-        if (!userId) {
-          console.error('Usuário não autenticado');
-          return;
-        }
-
-        const deviceRef = ref(database, `users/${userId}/devices`);
-        const snapshot = await get(deviceRef);
-
-        if (snapshot.exists()) {
-          const devicesFromDB = snapshot.val();
-          const deviceArray = Object.keys(devicesFromDB).map((key) => devicesFromDB[key]);
-          const enhancedDevices = addMockDataToDevices(deviceArray);
-          const calculatedData = calculateEfficiency(enhancedDevices);
-          setDevicesAnalysis(calculatedData);
-        } else {
-          console.log("Nenhum dispositivo encontrado no banco de dados.");
-        }
-      } catch (error) {
-        console.error("Erro ao carregar dispositivos do Firebase:", error);
-      }
-    };
-
-    loadDevicesFromFirebase();
+    loadDevicesAndCalculateAnalysis();
   }, []);
+
+  const loadDevicesAndCalculateAnalysis = async () => {
+    try {
+      const userId = await AsyncStorage.getItem('userToken');
+      if (!userId) {
+        alert('Usuário não autenticado.');
+        return;
+      }
+
+      const response = await axios.get(`${BASE_URL}/devices`);
+      const devicesFromAPI = response.data;
+
+      const filteredDevices = devicesFromAPI.filter(
+        (device: any) => device.user?.userId === userId
+      );
+
+      const enhancedDevices = addMockDataToDevices(filteredDevices);
+      const calculatedData = calculateEfficiency(enhancedDevices, userId);
+      setDevicesAnalysis(calculatedData);
+    } catch (error) {
+      console.error('Erro ao carregar dispositivos da API:', error);
+    }
+  };
 
   const addMockDataToDevices = (devices: any[]) => {
     return devices.map(device => {
-      const mockWatts = device.device_current_watts || Math.round(Math.random() * (3000 - 1000) + 1000); 
+      const deviceTypeConfig = {
+        'Ar Condicionado': { minWatts: 1000, maxWatts: 3000 },
+        'Fogão': { minWatts: 800, maxWatts: 1500 },
+        'Micro-ondas': { minWatts: 600, maxWatts: 1200 },
+        'Forno elétrico': { minWatts: 1000, maxWatts: 2500 },
+        'Lâmpada': { minWatts: 5, maxWatts: 100 },
+        'Lavador de roupa': { minWatts: 500, maxWatts: 1500 },
+        'Refrigerador': { minWatts: 100, maxWatts: 400 },
+        'Televisor': { minWatts: 50, maxWatts: 400 },
+        'Ventilador': { minWatts: 20, maxWatts: 100 },
+      } as const;
+
+      const config = deviceTypeConfig[device.deviceType as keyof typeof deviceTypeConfig];
+      const generateRandomValue = (min: number, max: number): number => Math.random() * (max - min) + min;
+      const mockWatts = config ? Math.round(generateRandomValue(config.minWatts, config.maxWatts)) : 1000;
 
       return {
         ...device,
-        device_current_watts: mockWatts,
+        deviceCurrentWatts: mockWatts,
       };
     });
   };
 
-  const calculateEfficiency = (devices: any[]) => {
+  const calculateEfficiency = (devices: any[], userId: string) => {
     return devices.map(data => {
-      const estimatedUsageHours = data.estimated_usage_hours || '0';
-      const dailyUsage = data.device_current_watts * parseFloat(estimatedUsageHours) / 1000;
+      const estimatedUsageHours = data.estimatedUsageHours || '1';
+      const dailyUsage = data.deviceCurrentWatts * parseFloat(estimatedUsageHours) / 1000;
       const monthlyUsage = dailyUsage * 30;
 
-      let efficiencyClass = classifyDeviceEfficiency(data.device_type, monthlyUsage);
+      const efficiencyClass = classifyDeviceEfficiency(data.deviceType, monthlyUsage);
 
       return {
-        device_name: data.device_name,
-        device_type: data.device_type,
-        device_current_watts: data.device_current_watts,
-        estimated_usage_hours: estimatedUsageHours,
-        energy_usage_monthly: Number(monthlyUsage.toFixed(2)),
-        efficiency_class: efficiencyClass
+        deviceAnalysId: Math.random(),
+        device: {
+          deviceId: data.deviceId,
+          deviceName: data.deviceName,
+          deviceType: data.deviceType,
+          estimatedUsageHours: data.estimatedUsageHours,
+        },
+        user: { userId },
+        deviceCurrentWatts: data.deviceCurrentWatts,
+        energyUsageMonthly: Number(monthlyUsage.toFixed(2)),
+        efficiencyClass: efficiencyClass,
       };
     });
   };
 
   const renderItem = ({ item }: { item: DeviceAnalysis }) => (
     <View style={styles.deviceItem}>
-      <Text style={styles.deviceName}>Dispositivo: {item.device_name}</Text>
-      <Text>Tipo: {item.device_type}</Text>
-      <Text>Potência Registrada: {item.device_current_watts} watts</Text>
-      <Text>Horas Estimadas de Uso: {item.estimated_usage_hours} horas/dia</Text>
-      <Text>Consumo Mensal: {item.energy_usage_monthly} kWh</Text>
-      <Text>Classificação de Eficiência: {item.efficiency_class}</Text>
+      <Text style={styles.deviceName}>Dispositivo: {item.device.deviceName}</Text>
+      <Text>Tipo: {item.device.deviceType}</Text>
+      <Text>Potência Registrada: {item.deviceCurrentWatts} watts</Text>
+      <Text>Horas Estimadas de Uso: {item.device.estimatedUsageHours} horas/dia</Text>
+      <Text>Consumo Mensal: {item.energyUsageMonthly} kWh</Text>
+      <Text>Classificação de Eficiência: {item.efficiencyClass}</Text>
     </View>
   );
 
@@ -109,13 +120,17 @@ const EfficiencyAnalysis = () => {
       <CustomPicker
         selectedValue={selectedDevice}
         onValueChange={setSelectedDevice}
-        options={devicesAnalysis.map(device => ({ label: `${device.device_name} - ${device.device_type}`, value: device.device_name }))}
+        options={devicesAnalysis.map(device => ({
+          label: `${device.device.deviceName} - ${device.device.deviceType}`,
+          value: device.device.deviceName
+        }))}
         placeholder="Selecione um dispositivo"
       />
+      <Button title="Atualizar Análises" onPress={loadDevicesAndCalculateAnalysis} />
       <FlatList
-        data={devicesAnalysis.filter(device => !selectedDevice || device.device_name === selectedDevice)}
+        data={devicesAnalysis.filter(device => !selectedDevice || device.device.deviceName === selectedDevice)}
         renderItem={renderItem}
-        keyExtractor={(item) => item.device_name}
+        keyExtractor={(item) => item.device.deviceId.toString()}
         style={styles.deviceList}
       />
     </View>
@@ -131,7 +146,7 @@ const styles = StyleSheet.create({
   header: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginBottom: 16
+    marginBottom: 16,
   },
   logoContainer: {
     flex: 1,

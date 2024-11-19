@@ -2,162 +2,218 @@ import React, { useState, useEffect } from 'react';
 import { View, Text, StyleSheet, FlatList, TouchableOpacity, Alert } from 'react-native';
 import Input from '../components/Input';
 import Button from '../components/Button';
-import { v4 as uuidv4 } from 'uuid';
-import { ref, set, get, remove } from "firebase/database";
-import { auth, database } from '../api/firebaseConfig';
+import axios from 'axios';
 import IconLeft from '../components/IconLeft';
 import LogoText from '../components/LogoText';
 import { useNavigation } from '@react-navigation/native';
 import { StackNavigationProp } from '@react-navigation/stack';
-import { RootStackParamsList } from '../types/navigation';
 import EditMeterModal from '../components/EditMeterModal';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { EnergyMeter, RootStackParamsList } from '../types/navigation';
 
-interface EnergyMeter {
-    meter_id: string;
-    meter_name: string;
-}
+const BASE_URL = 'http://192.168.0.147:8080';
 
 const RegisterMeter = () => {
     const [meterName, setMeterName] = useState('');
     const [energyMeters, setEnergyMeters] = useState<EnergyMeter[]>([]);
-    const [editingMeterId, setEditingMeterId] = useState<string | null>(null);
+    const [devices, setDevices] = useState<any[]>([]);
+    const [editingMeterId, setEditingMeterId] = useState<number | null>(null);
     const [isModalVisible, setIsModalVisible] = useState(false);
     const [modalMeterName, setModalMeterName] = useState('');
 
     const navigation = useNavigation<StackNavigationProp<RootStackParamsList>>();
 
     useEffect(() => {
-        const loadEnergyMetersFromFirebase = async () => {
-            try {
-                const userId = auth.currentUser?.uid;
-                if (!userId) {
-                    throw new Error("Usuário não autenticado");
-                }
-                const meterRef = ref(database, `users/${userId}/energy_meters`);
-                const snapshot = await get(meterRef);
-
-                if (snapshot.exists()) {
-                    const metersFromDB = snapshot.val();
-                    const meterArray = Object.keys(metersFromDB).map((key) => metersFromDB[key]);
-                    setEnergyMeters(meterArray);
-                } else {
-                    console.log("Nenhum medidor de energia encontrado para o usuário.");
-                }
-            } catch (error) {
-                console.error("Erro ao carregar medidores de energia:", error);
-            }
-        };
-
-        loadEnergyMetersFromFirebase();
+        loadEnergyMetersFromAPI();
+        loadDevicesFromAPI();
     }, []);
 
-    const handleAddEnergyMeter = async () => {
-        if (meterName) {
-            const newMeter: EnergyMeter = {
-                meter_id: uuidv4(),
-                meter_name: meterName,
-            };
-
-            try {
-                const userId = auth.currentUser?.uid;
-                if (!userId) {
-                    throw new Error("Usuário não autenticado");
-                }
-
-                const meterRef = ref(database, `users/${userId}/energy_meters/${newMeter.meter_id}`);
-                await set(meterRef, newMeter);
-
-                setEnergyMeters([...energyMeters, newMeter]);
-                setMeterName('');
-            } catch (error) {
-                console.error("Erro ao salvar medidor de energia no Firebase:", error);
+    const loadEnergyMetersFromAPI = async () => {
+        try {
+            const userId = await AsyncStorage.getItem('userToken');
+            if (!userId) {
+                alert('Usuário não autenticado.');
+                return;
             }
-        } else {
-            alert('Por favor, insira o nome do medidor.');
+
+            const response = await axios.get(`${BASE_URL}/energy-meters`);
+            const filteredMeters = response.data.filter((meter: EnergyMeter) => meter.user?.userId === userId);
+            console.log("Medidores filtrados pelo usuário logado:", filteredMeters);
+            setEnergyMeters(filteredMeters);
+        } catch (error) {
+            console.error("Erro ao carregar medidores de energia da API:", error);
+        }
+    };
+
+
+    const loadDevicesFromAPI = async () => {
+        try {
+            const userId = await AsyncStorage.getItem('userToken');
+            if (!userId) {
+                alert('Usuário não autenticado.');
+                return;
+            }
+            const response = await axios.get(`${BASE_URL}/devices`, {
+                params: {
+                    userId: userId
+                }
+            });
+            setDevices(response.data);
+        } catch (error) {
+            console.error("Erro ao carregar dispositivos da API:", error);
+        }
+    };
+
+
+    const handleAddEnergyMeter = async () => {
+        if (!meterName.trim()) {
+            alert('O nome do medidor não pode ser nulo ou vazio.');
+            return;
+        }
+
+        try {
+            const userId = await AsyncStorage.getItem('userToken');
+            if (!userId) {
+                alert('Usuário não autenticado.');
+                return;
+            }
+
+            const existingMeter = energyMeters.find(
+                (meter) =>
+                    meter.meterName.trim().toLowerCase() === meterName.trim().toLowerCase() &&
+                    meter.user?.userId === userId
+            );
+
+            if (existingMeter) {
+                alert('Já existe um medidor com este nome para o seu usuário.');
+                return;
+            }
+
+            const response = await axios.post(`${BASE_URL}/energy-meters`, {
+                meterName: meterName.trim(),
+                user: {
+                    userId: userId,
+                }
+            });
+            console.log("Dados do medidor salvos na API com sucesso:", response.data);
+            setEnergyMeters([...energyMeters, response.data]);
+            setMeterName('');
+        } catch (error) {
+            const err = error as any;
+            console.error('Erro ao adicionar medidor de energia na API:', err.message);
         }
     };
 
     const handleEditMeter = (meter: EnergyMeter) => {
-        setModalMeterName(meter.meter_name);
-        setEditingMeterId(meter.meter_id);
+        setModalMeterName(meter.meterName);
+        setEditingMeterId(meter.energyMeterId);
         setIsModalVisible(true);
     };
 
     const handleSaveModal = async (name: string) => {
-        if (editingMeterId) {
-            const updatedMeter: EnergyMeter = {
-                meter_id: editingMeterId,
-                meter_name: name,
-            };
+        if (editingMeterId !== null) {
+            const userId = await AsyncStorage.getItem('userToken');
+            if (!userId) {
+                alert('Usuário não autenticado.');
+                return;
+            }
+
+            const existingMeter = energyMeters.find(
+                (meter) =>
+                    meter.meterName.trim().toLowerCase() === name.trim().toLowerCase() &&
+                    meter.user?.userId === userId &&
+                    meter.energyMeterId !== editingMeterId
+            );
+
+            if (existingMeter) {
+                alert('Já existe um medidor com este nome para o seu usuário.');
+                return;
+            }
 
             try {
-                const userId = auth.currentUser?.uid;
-                if (!userId) {
-                    throw new Error("Usuário não autenticado");
-                }
-
-                const meterRef = ref(database, `users/${userId}/energy_meters/${editingMeterId}`);
-                await set(meterRef, updatedMeter);
-
+                await axios.put(`${BASE_URL}/energy-meters/${editingMeterId}`, { meterName: name.trim() });
                 const updatedMeters = energyMeters.map((meter) =>
-                    meter.meter_id === editingMeterId ? updatedMeter : meter
+                    meter.energyMeterId === editingMeterId ? { ...meter, meterName: name.trim() } : meter
                 );
                 setEnergyMeters(updatedMeters);
                 setEditingMeterId(null);
                 setIsModalVisible(false);
             } catch (error) {
-                console.error("Erro ao atualizar medidor de energia no Firebase:", error);
+                console.error("Erro ao atualizar medidor de energia na API:", error);
             }
         }
     };
 
-    const handleDeleteMeter = async (meterId: string) => {
-        Alert.alert(
-            "Excluir Medidor",
-            "Você tem certeza que deseja excluir este medidor?",
-            [
-                {
-                    text: "Cancelar",
-                    style: "cancel",
-                },
-                {
-                    text: "Excluir",
-                    style: "destructive",
-                    onPress: async () => {
-                        try {
-                            const userId = auth.currentUser?.uid;
-                            if (!userId) {
-                                throw new Error("Usuário não autenticado");
-                            }
+    const handleDeleteMeter = async (energyMeterId: number) => {
+        const associatedDevices = devices.filter(device => device.energyMeter.energyMeterId === energyMeterId);
 
-                            const meterRef = ref(database, `users/${userId}/energy_meters/${meterId}`);
-                            await remove(meterRef);
+        if (associatedDevices.length > 0) {
+            Alert.alert(
+                "Excluir Medidor",
+                `Este medidor está associado a ${associatedDevices.length} dispositivo(s). Se você continuar, o(s) dispositivo(s), análises e relatórios também serão excluídos.`,
+                [
+                    { text: "Cancelar", style: "cancel" },
+                    {
+                        text: "Excluir",
+                        style: "destructive",
+                        onPress: async () => {
+                            try {
+                                for (const device of associatedDevices) {
+                                    // Remover análises associadas ao dispositivo
+                                    const deviceAnalysisResponse = await axios.get(`${BASE_URL}/device-analysis`);
+                                    const deviceAnalyses = deviceAnalysisResponse.data.filter((analysis: any) => analysis.device.deviceId === device.deviceId);
 
-                            const filteredMeters = energyMeters.filter((meter) => meter.meter_id !== meterId);
-                            setEnergyMeters(filteredMeters);
+                                    for (const analysis of deviceAnalyses) {
+                                        // Excluir relatórios associados à análise
+                                        const reportResponse = await axios.get(`${BASE_URL}/reports`);
+                                        const reports = reportResponse.data.filter((report: any) => report.deviceAnalysis.deviceAnalysisId === analysis.deviceAnalysisId);
 
-                            const devicesRef = ref(database, `users/${userId}/devices`);
-                            const devicesSnapshot = await get(devicesRef);
+                                        for (const report of reports) {
+                                            await axios.delete(`${BASE_URL}/reports/${report.reportId}`);
+                                        }
 
-                            if (devicesSnapshot.exists()) {
-                                const devices = devicesSnapshot.val();
-
-                                for (const deviceId in devices) {
-                                    if (devices[deviceId].energy_meter_id === meterId) {
-                                        await set(ref(database, `users/${userId}/devices/${deviceId}/energy_meter_id`), "");
+                                        // Excluir a própria análise
+                                        await axios.delete(`${BASE_URL}/device-analysis/${analysis.deviceAnalysisId}`);
                                     }
-                                }
-                            }
-                        } catch (error) {
-                            console.error("Erro ao excluir medidor de energia no Firebase:", error);
-                        }
-                    },
-                },
-            ],
-            { cancelable: false }
-        );
-    };
 
+                                    // Excluir o dispositivo
+                                    await axios.delete(`${BASE_URL}/devices/${device.deviceId}`);
+                                }
+
+                                // Excluir o medidor de energia
+                                await axios.delete(`${BASE_URL}/energy-meters/${energyMeterId}`);
+                                setEnergyMeters(energyMeters.filter((meter) => meter.energyMeterId !== energyMeterId));
+                            } catch (error) {
+                                console.error("Erro ao excluir medidor, dispositivos, análises ou relatórios associados na API:", error);
+                            }
+                        },
+                    },
+                ],
+                { cancelable: false }
+            );
+        } else {
+            Alert.alert(
+                "Excluir Medidor",
+                "Você tem certeza que deseja excluir este medidor?",
+                [
+                    { text: "Cancelar", style: "cancel" },
+                    {
+                        text: "Excluir",
+                        style: "destructive",
+                        onPress: async () => {
+                            try {
+                                await axios.delete(`${BASE_URL}/energy-meters/${energyMeterId}`);
+                                setEnergyMeters(energyMeters.filter((meter) => meter.energyMeterId !== energyMeterId));
+                            } catch (error) {
+                                console.error("Erro ao excluir medidor de energia na API:", error);
+                            }
+                        },
+                    },
+                ],
+                { cancelable: false }
+            );
+        }
+    };
 
     return (
         <View style={styles.container}>
@@ -177,18 +233,18 @@ const RegisterMeter = () => {
                 data={energyMeters}
                 renderItem={({ item }) => (
                     <View style={styles.meterItem}>
-                        <Text style={styles.meterName}>{item.meter_name}</Text>
+                        <Text style={styles.meterName}>{item.meterName}</Text>
                         <View style={styles.buttonsContainer}>
                             <TouchableOpacity onPress={() => handleEditMeter(item)}>
                                 <Text style={styles.buttonText}>Editar</Text>
                             </TouchableOpacity>
-                            <TouchableOpacity onPress={() => handleDeleteMeter(item.meter_id)}>
+                            <TouchableOpacity onPress={() => handleDeleteMeter(item.energyMeterId)}>
                                 <Text style={styles.buttonText}>Excluir</Text>
                             </TouchableOpacity>
                         </View>
                     </View>
                 )}
-                keyExtractor={(item) => item.meter_id}
+                keyExtractor={(item) => (item.energyMeterId ? item.energyMeterId.toString() : Math.random().toString())}
                 style={styles.deviceList}
             />
 

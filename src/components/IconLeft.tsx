@@ -9,7 +9,7 @@ interface IconLeftProps {
 const IconLeft: React.FC<IconLeftProps> = ({ onPress }) => {
   return (
     <TouchableOpacity onPress={onPress}>
-      <Icon name="arrow-left" size={30} color="#1E3E69" />
+      <Icon name="arrow-left" size={35} color="#1E3E69" />
     </TouchableOpacity>
   );
 };

@@ -39,11 +39,11 @@ const Menu = () => {
     const handleNavigateToMeters = () => {
         navigation.navigate('RegisterMeter');
     };
-    
+
     const handleNavigateToEfficiencyAnalysis = () => {
         navigation.navigate('EfficiencyAnalysis');
     };
-    
+
     const handleNavigateToReportGeneration = () => {
         navigation.navigate('ReportGeneration');
     };
@@ -81,11 +81,11 @@ const Menu = () => {
                 <Text style={styles.title}>Menu</Text>
 
                 {userEmail ? (
-                    <Text style={styles.userEmail}>{`Usuário logado: ${userEmail}`}</Text>
+                    <Text style={styles.userEmail}>{`Usuário: ${userEmail}`}</Text>
                 ) : null}
 
-                <Button title="Dispositivos" onPress={handleNavigateToDevices} />
                 <Button title="Medidores" onPress={handleNavigateToMeters} />
+                <Button title="Dispositivos" onPress={handleNavigateToDevices} />
                 <Button title="Eficiência" onPress={handleNavigateToEfficiencyAnalysis} />
                 <Button title="Relatório" onPress={handleNavigateToReportGeneration} />
             </View>

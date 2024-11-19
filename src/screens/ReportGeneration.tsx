@@ -1,146 +1,226 @@
 import React, { useState, useEffect } from 'react';
+import { useFocusEffect } from '@react-navigation/native';
 import { View, Text, StyleSheet, FlatList, Alert, TouchableOpacity, Modal, ScrollView } from 'react-native';
-import { ref, set, get, remove } from "firebase/database";
-import { database, auth } from '../api/firebaseConfig';
+import axios from 'axios';
 import Button from '../components/Button';
 import IconLeft from '../components/IconLeft';
 import LogoText from '../components/LogoText';
 import { useNavigation } from '@react-navigation/native';
 import { StackNavigationProp } from '@react-navigation/stack';
-import { RootStackParamsList } from '../types/navigation';
-import classifyDeviceEfficiency from '../mock/efficiencyClassification';
+import { Device, DeviceAnalysis, Report, RootStackParamsList } from '../types/navigation';
+import classifyDeviceEfficiency from '../utils/efficiencyClassification';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import CustomPicker from '../components/CustomPicker';
 
-interface DeviceAnalysis {
-    device_name: string;
-    device_type: string;
-    device_current_watts: number;
-    estimated_usage_hours: string;
-    energy_usage_monthly: number;
-    efficiency_class: string;
-}
-
-interface Report {
-    id: string;
-    generated_at: string;
-    devices_analysis: DeviceAnalysis[];
-}
+const BASE_URL = 'http://192.168.0.147:8080';
 
 const ReportGeneration = () => {
-    const [devicesAnalysis, setDevicesAnalysis] = useState<DeviceAnalysis[]>([]);
+    const [deviceAnalysis, setDeviceAnalysis] = useState<DeviceAnalysis[]>([]);
+    const [devices, setDevices] = useState<Device[]>([]);
     const [reports, setReports] = useState<Report[]>([]);
+    const [selectedDeviceId, setSelectedDeviceId] = useState<string>('');
     const [isModalVisible, setIsModalVisible] = useState(false);
     const [selectedReport, setSelectedReport] = useState<Report | null>(null);
     const navigation = useNavigation<StackNavigationProp<RootStackParamsList>>();
 
+    useFocusEffect(
+        React.useCallback(() => {
+            loadDevicesFromAPI();
+            generateMockDataAndAnalysis();
+            loadReportsFromAPI();
+        }, [])
+    );
+
     useEffect(() => {
-        const loadDevicesFromFirebase = async () => {
-            try {
-                const userId = auth.currentUser?.uid;
-                if (!userId) {
-                    console.error('Usuário não autenticado');
-                    return;
-                }
+        if (devices.length > 0) {
+            generateMockDataAndAnalysis();
+        }
+    }, [devices, selectedDeviceId]);
 
-                const deviceRef = ref(database, `users/${userId}/devices`);
-                const snapshot = await get(deviceRef);
+    const [dataLoaded, setDataLoaded] = useState(false);
 
-                if (snapshot.exists()) {
-                    const devicesFromDB = snapshot.val();
-                    const deviceArray = Object.keys(devicesFromDB).map((key) => devicesFromDB[key]);
-                    const enhancedDevices = addMockDataToDevices(deviceArray);
-                    const calculatedData = calculateEfficiency(enhancedDevices);
-                    setDevicesAnalysis(calculatedData);
-                } else {
-                    console.log("Nenhum dispositivo encontrado no banco de dados.");
-                }
-            } catch (error) {
-                console.error("Erro ao carregar dispositivos do Firebase:", error);
-            }
-        };
+    const loadData = async () => {
+        if (!dataLoaded) {
+            await loadDevicesFromAPI();
+            await generateMockDataAndAnalysis();
+            await loadReportsFromAPI();
+            setDataLoaded(true);
+        }
+    };
 
-        const loadReportsFromFirebase = async () => {
-            try {
-                const userId = auth.currentUser?.uid;
-                if (!userId) {
-                    console.error('Usuário não autenticado');
-                    return;
-                }
-
-                const reportRef = ref(database, `users/${userId}/reports`);
-                const snapshot = await get(reportRef);
-
-                if (snapshot.exists()) {
-                    const reportsFromDB = snapshot.val();
-                    const reportArray = Object.keys(reportsFromDB).map((key) => ({
-                        id: key,
-                        ...reportsFromDB[key],
-                    }));
-                    setReports(reportArray);
-                }
-            } catch (error) {
-                console.error('Erro ao carregar relatórios:', error);
-            }
-        };
-
-        loadDevicesFromFirebase();
-        loadReportsFromFirebase();
+    useEffect(() => {
+        loadData();
     }, []);
 
-    const addMockDataToDevices = (devices: any[]) => {
-        return devices.map(device => {
-            const mockWatts = device.device_current_watts || Math.round(Math.random() * (3000 - 1000) + 1000);
-            return {
-                ...device,
-                device_current_watts: mockWatts,
-            };
-        });
-    };
-
-    const calculateEfficiency = (devices: any[]) => {
-        return devices.map(data => {
-            const usageInHours = parseFloat(data.estimated_usage_hours.split(' ')[0]);
-            const dailyUsage = data.device_current_watts * usageInHours / 1000;
-            const monthlyUsage = dailyUsage * 30;
-
-            let efficiencyClass = classifyDeviceEfficiency(data.device_type, monthlyUsage);
-
-            return {
-                device_name: data.device_name,
-                device_type: data.device_type,
-                device_current_watts: data.device_current_watts,
-                estimated_usage_hours: data.estimated_usage_hours,
-                energy_usage_monthly: Number(monthlyUsage.toFixed(2)),
-                efficiency_class: efficiencyClass,
-            };
-        });
-    };
-
-    const generateReport = async () => {
+    const generateMockDataAndAnalysis = async () => {
         try {
-            const userId = auth.currentUser?.uid;
+            const userId = await AsyncStorage.getItem('userToken');
             if (!userId) {
-                throw new Error('Usuário não autenticado');
+                alert('Usuário não autenticado.');
+                return;
+            }
+            const selectedDevice = devices.find(
+                device => device.deviceId.toString() === selectedDeviceId && device.user?.userId === userId
+            );
+
+            if (!selectedDevice || isNaN(selectedDevice.deviceId)) {
+                console.log(selectedDevice, '=> Nenhum dispositivo selecionado');
+                return;
             }
 
-            const reportData = {
-                generated_at: new Date().toISOString(),
-                devices_analysis: devicesAnalysis,
+            const deviceTypeConfig = {
+                'Ar Condicionado': { minWatts: 1000, maxWatts: 3000 },
+                'Fogão': { minWatts: 800, maxWatts: 1500 },
+                'Micro-ondas': { minWatts: 600, maxWatts: 1200 },
+                'Forno elétrico': { minWatts: 1000, maxWatts: 2500 },
+                'Lâmpada': { minWatts: 5, maxWatts: 100 },
+                'Lavador de roupa': { minWatts: 500, maxWatts: 1500 },
+                'Refrigerador': { minWatts: 100, maxWatts: 400 },
+                'Televisor': { minWatts: 50, maxWatts: 400 },
+                'Ventilador': { minWatts: 20, maxWatts: 100 },
+            } as const;
+
+            const config = deviceTypeConfig[selectedDevice.deviceType as keyof typeof deviceTypeConfig];
+            if (!config) {
+                console.error('Tipo de dispositivo desconhecido:', selectedDevice.deviceType);
+                return;
+            }
+
+            const generateRandomValue = (min: number, max: number): number => Math.random() * (max - min) + min;
+            const deviceCurrentWatts = Math.round(generateRandomValue(config.minWatts, config.maxWatts));
+            const usageHours = generateRandomValue(1, 24);
+            const energyUsageMonthly = Number((deviceCurrentWatts * usageHours / 1000 * 30).toFixed(2));
+
+            const deviceAnalysisData = [{
+                deviceAnalysisId: 0,
+                deviceCurrentWatts,
+                energyUsageMonthly,
+                efficiencyClass: classifyDeviceEfficiency(selectedDevice.deviceType, energyUsageMonthly),
+                device: {
+                    deviceId: Number(selectedDevice.deviceId),
+                    deviceName: selectedDevice.deviceName,
+                    deviceType: selectedDevice.deviceType,
+                    estimatedUsageHours: selectedDevice.estimatedUsageHours,
+                },
+                user: { userId },
+            }];
+
+            setDeviceAnalysis(deviceAnalysisData);
+        } catch (error) {
+            console.error('Erro ao gerar dados de análise com mock:', error);
+        }
+    };
+
+
+    const loadDevicesFromAPI = async () => {
+        try {
+            const userId = await AsyncStorage.getItem('userToken');
+            if (!userId) {
+                alert('Usuário não autenticado.');
+                return;
+            }
+
+            const response = await axios.get(`${BASE_URL}/devices`);
+            const filteredDevices = response.data.filter((device: Device) => device.user?.userId === userId);
+            setDevices(filteredDevices);
+        } catch (error) {
+            console.error('Erro ao carregar dispositivos da API:', error);
+        }
+    };
+
+    const loadReportsFromAPI = async () => {
+        try {
+            const userId = await AsyncStorage.getItem('userToken');
+            if (!userId) {
+                alert('Usuário não autenticado.');
+                return;
+            }
+
+            const response = await axios.get(`${BASE_URL}/reports`);
+            const filteredReports = response.data.filter((report: Report) => report.user?.userId === userId);
+            setReports(filteredReports);
+        } catch (error) {
+            console.error('Erro ao carregar relatórios:', error);
+        }
+    };
+
+
+    const saveDeviceAnalysis = async () => {
+        try {
+            const userId = await AsyncStorage.getItem('userToken');
+            if (!userId) {
+                alert('Usuário não autenticado.');
+                return;
+            }
+
+            if (deviceAnalysis.length === 0) {
+                alert('Nenhuma análise de dispositivo para salvar.');
+                return;
+            }
+
+            const analysisData = {
+                device: { deviceId: deviceAnalysis[0].device.deviceId },
+                deviceCurrentWatts: deviceAnalysis[0].deviceCurrentWatts,
+                energyUsageMonthly: deviceAnalysis[0].energyUsageMonthly,
+                efficiencyClass: deviceAnalysis[0].efficiencyClass,
+                user: { userId }
             };
 
-            const reportRef = ref(database, `users/${userId}/reports/${new Date().getTime()}`);
-            await set(reportRef, reportData);
+            console.log('Dados de análise que serão enviados:', analysisData);
+            const response = await axios.post(`${BASE_URL}/device-analysis`, analysisData);
 
-            setReports([...reports, { id: new Date().getTime().toString(), ...reportData }]);
+            console.log('Resposta da API ao salvar a análise:', response.data);
+            return response.data;
+        } catch (error) {
+            console.error('Erro ao salvar a análise de dispositivos:', error);
+            throw error;
+        }
+    };
+
+    const generateReportForSelectedDevice = async () => {
+        if (!selectedDeviceId) {
+            alert('Selecione um dispositivo para gerar o relatório.');
+            return;
+        }
+
+        try {
+            const savedDeviceAnalysis = await saveDeviceAnalysis();
+            if (!savedDeviceAnalysis || !savedDeviceAnalysis.deviceAnalysisId) {
+                alert('Falha ao salvar a análise do dispositivo.');
+                return;
+            }
+
+            const userId = await AsyncStorage.getItem('userToken');
+            if (!userId) {
+                alert('Usuário não autenticado.');
+                return;
+            }
+
+            const reportData: Report = {
+                deviceAnalysis: {
+                    deviceAnalysisId: savedDeviceAnalysis.deviceAnalysisId,
+                },
+                generatedAt: new Date().toISOString(),
+                user: { userId }
+            };
+
+            console.log('Dados do relatório que serão enviados:', reportData);
+
+            const response = await axios.post(`${BASE_URL}/reports`, reportData);
+
+            setReports([...reports, { ...reportData, reportId: response.data.id }]);
             alert('Relatório gerado e salvo com sucesso!');
+            await loadReportsFromAPI();
+            await generateMockDataAndAnalysis();
         } catch (error) {
             console.error('Erro ao gerar relatório:', error);
         }
     };
 
-    const handleDeleteReport = async (reportId: string) => {
+    const handleDeleteReport = async (reportId?: number) => {
         Alert.alert(
             "Excluir Relatório",
-            "Você tem certeza que deseja excluir este relatório?",
+            "Você tem certeza que deseja excluir este relatório e a análise associada?",
             [
                 {
                     text: "Cancelar",
@@ -151,19 +231,21 @@ const ReportGeneration = () => {
                     style: "destructive",
                     onPress: async () => {
                         try {
-                            const userId = auth.currentUser?.uid;
-                            if (!userId) {
-                                throw new Error("Usuário não autenticado");
+                            const reportToDelete = reports.find(report => report.reportId === reportId);
+
+                            await axios.delete(`${BASE_URL}/reports/${reportId}`);
+
+                            if (reportToDelete && reportToDelete.deviceAnalysis) {
+                                const { deviceAnalysisId } = reportToDelete.deviceAnalysis;
+                                await axios.delete(`${BASE_URL}/device-analysis/${deviceAnalysisId}`);
                             }
-
-                            const reportRef = ref(database, `users/${userId}/reports/${reportId}`);
-                            await remove(reportRef);
-
-                            const filteredReports = reports.filter((report) => report.id !== reportId);
+                            const filteredReports = reports.filter(report => report.reportId !== reportId);
                             setReports(filteredReports);
+
                             alert('Relatório excluído com sucesso!');
                         } catch (error) {
-                            console.error('Erro ao excluir relatório:', error);
+                            console.error('Erro ao excluir relatório e análise:', error);
+                            alert('Erro ao excluir o relatório e sua análise associada. Tente novamente.');
                         }
                     },
                 },
@@ -173,23 +255,35 @@ const ReportGeneration = () => {
     };
 
     const handleViewReport = (report: Report) => {
+        if (!report || !report.deviceAnalysis) {
+            alert('Dados incompletos no relatório selecionado.');
+            return;
+        }
+        console.log('Visualizando relatório:', report);
         setSelectedReport(report);
         setIsModalVisible(true);
     };
 
-    const renderReportItem = ({ item }: { item: Report }) => (
-        <View style={styles.reportItem}>
-            <Text style={styles.reportTitle}>Relatório gerado em: {new Date(item.generated_at).toLocaleString()}</Text>
-            <View style={styles.buttonsContainer}>
-                <TouchableOpacity onPress={() => handleViewReport(item)}>
-                    <Text style={styles.viewButton}>Visualizar</Text>
-                </TouchableOpacity>
-                <TouchableOpacity onPress={() => handleDeleteReport(item.id)}>
-                    <Text style={styles.deleteButton}>Excluir Relatório</Text>
-                </TouchableOpacity>
+    const renderReportItem = ({ item }: { item: Report }) => {
+        if (!item || !item.deviceAnalysis) {
+            return null;
+        }
+        return (
+            <View style={styles.reportItem}>
+                <Text style={styles.reportTitle}>
+                    Relatório gerado em: {new Date(item.generatedAt).toLocaleString()}
+                </Text>
+                <View style={styles.buttonsContainer}>
+                    <TouchableOpacity onPress={() => handleViewReport(item)}>
+                        <Text style={styles.viewButton}>Visualizar</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity onPress={() => handleDeleteReport(item.reportId)}>
+                        <Text style={styles.deleteButton}>Excluir Relatório</Text>
+                    </TouchableOpacity>
+                </View>
             </View>
-        </View>
-    );
+        );
+    };
 
     return (
         <View style={styles.container}>
@@ -202,12 +296,21 @@ const ReportGeneration = () => {
                 </View>
             </View>
             <Text style={styles.title}>Geração de Relatórios</Text>
-            <Button title="Gerar Relatório" onPress={generateReport} />
+            <CustomPicker
+                selectedValue={selectedDeviceId}
+                onValueChange={setSelectedDeviceId}
+                options={devices.map(device => ({
+                    label: `${device.deviceName} - ${device.deviceType}`,
+                    value: device.deviceId.toString()
+                }))}
+                placeholder="Selecione um dispositivo"
+            />
+            <Button title="Gerar Relatório" onPress={generateReportForSelectedDevice} />
             <Text style={styles.subTitle}>Relatórios Gerados</Text>
             <FlatList
                 data={reports}
                 renderItem={renderReportItem}
-                keyExtractor={(item) => item.id}
+                keyExtractor={item => (item && item.reportId ? item.reportId.toString() : Math.random().toString())}
                 style={styles.reportList}
             />
 
@@ -221,16 +324,17 @@ const ReportGeneration = () => {
                     <View style={styles.modalContent}>
                         <ScrollView>
                             <Text style={styles.modalTitle}>Detalhes do Relatório</Text>
-                            {selectedReport?.devices_analysis.map((device, index) => (
-                                <View key={index} style={styles.deviceItem}>
-                                    <Text style={styles.deviceName}>Dispositivo: {device.device_name}</Text>
-                                    <Text>Tipo: {device.device_type}</Text>
-                                    <Text>Potência Registrada: {device.device_current_watts} watts</Text>
-                                    <Text>Tempo Estimado de Uso: {device.estimated_usage_hours}</Text>
-                                    <Text>Consumo Mensal Estimado: {device.energy_usage_monthly} kWh</Text>
-                                    <Text>Classificação de Eficiência: {device.efficiency_class}</Text>
+                            {selectedReport && (
+                                <View style={styles.deviceItem}>
+                                    <Text style={styles.deviceName}>Dispositivo Analisado:</Text>
+                                    <Text>Nome do Dispositivo: {selectedReport.deviceAnalysis?.device?.deviceName || 'Nome não disponível'}</Text>
+                                    <Text>Tipo do Dispositivo: {selectedReport.deviceAnalysis?.device?.deviceType || 'Tipo não disponível'}</Text>
+                                    <Text>Tempo Estimado de Uso: {selectedReport.deviceAnalysis?.device?.estimatedUsageHours || 'Horas não disponíveis'} horas</Text>
+                                    <Text>Potência Registrada: {selectedReport.deviceAnalysis?.deviceCurrentWatts || 'Potência não disponível'} watts</Text>
+                                    <Text>Consumo Mensal Estimado: {selectedReport.deviceAnalysis?.energyUsageMonthly || 'Consumo não disponível'} kWh</Text>
+                                    <Text>Classificação de Eficiência: {selectedReport.deviceAnalysis?.efficiencyClass || 'Classificação não disponível'}</Text>
                                 </View>
-                            ))}
+                            )}
                             <Button title="Fechar" onPress={() => setIsModalVisible(false)} />
                         </ScrollView>
                     </View>
@@ -330,4 +434,3 @@ const styles = StyleSheet.create({
 });
 
 export default ReportGeneration;
-

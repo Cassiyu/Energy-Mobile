@@ -5,40 +5,26 @@ import Input from '../components/Input';
 import Button from '../components/Button';
 import LogoText from '../components/LogoText';
 import { useNavigation } from '@react-navigation/native';
-import { RootStackParamsList } from '../types/navigation';
+import { Device, EnergyMeter, RootStackParamsList } from '../types/navigation';
 import { StackNavigationProp } from '@react-navigation/stack';
 import CustomPicker from '../components/CustomPicker';
-import { v4 as uuidv4 } from 'uuid';
-import { ref, set, get, remove } from "firebase/database";
-import { auth, database } from '../api/firebaseConfig';
-import 'react-native-get-random-values';
+import axios from 'axios';
 import IconLeft from '../components/IconLeft';
 import EditDeviceModal from '../components/EditDeviceModal';
 
-interface Device {
-  device_id: string;
-  device_name: string;
-  device_type: string;
-  energy_meter_id: string;
-  estimated_usage_hours: string;
-}
-
-interface EnergyMeter {
-  meter_id: string;
-  meter_name: string;
-}
+const BASE_URL = 'http://192.168.0.147:8080';
 
 const RegisterDevice = () => {
   const [energyMeters, setEnergyMeters] = useState<EnergyMeter[]>([]);
-  const [selectedMeter, setSelectedMeter] = useState<string>(''); 
+  const [selectedMeter, setSelectedMeter] = useState<string | null>(null);
   const [deviceName, setDeviceName] = useState('');
   const [deviceType, setDeviceType] = useState('');
   const [estimatedUsageHours, setEstimatedUsageHours] = useState('');
   const [timeUnit, setTimeUnit] = useState<'Horas' | 'Minutos'>('Horas');
   const [devices, setDevices] = useState<Device[]>([]);
-  const [editingDeviceId, setEditingDeviceId] = useState<string | null>(null);
+  const [editingDeviceId, setEditingDeviceId] = useState<number | null>(null);
   const [isModalVisible, setIsModalVisible] = useState(false);
-  const [modalSelectedMeter, setModalSelectedMeter] = useState<string>('');
+  const [modalSelectedMeter, setModalSelectedMeter] = useState<string | number | null>(null);
   const [modalData, setModalData] = useState<{ name: string; type: string; hours: string; unit: 'Horas' | 'Minutos' }>({
     name: '',
     type: '',
@@ -52,64 +38,82 @@ const RegisterDevice = () => {
     const checkUserSession = async () => {
       try {
         const userToken = await AsyncStorage.getItem('userToken');
-
         if (!userToken) {
           navigation.navigate('Login');
         } else {
-          loadEnergyMetersFromFirebase(userToken);
-          loadDevicesFromFirebase(userToken);
+          loadDevicesFromAPI();
+          loadEnergyMetersFromAPI();
         }
       } catch (err) {
         console.error('Erro ao carregar dados do usuário:', err);
       }
     };
-
     checkUserSession();
   }, []);
 
-  const loadDevicesFromFirebase = async (userId: string) => {
+  const loadDevicesFromAPI = async () => {
     try {
-      const deviceRef = ref(database, `users/${userId}/devices`);
-      const snapshot = await get(deviceRef);
-
-      if (snapshot.exists()) {
-        const devicesFromDB = snapshot.val();
-        const deviceArray = Object.keys(devicesFromDB).map((key) => devicesFromDB[key]);
-        setDevices(deviceArray);
-      } else {
-        console.log("Nenhum dispositivo encontrado para o usuário.");
-      }
-    } catch (error) {
-      console.error("Erro ao carregar dispositivos:", error);
-    }
-  };
-
-  const loadEnergyMetersFromFirebase = async (userId: string) => {
-    try {
-      const meterRef = ref(database, `users/${userId}/energy_meters`);
-      const snapshot = await get(meterRef);
-
-      if (snapshot.exists()) {
-        const metersFromDB = snapshot.val();
-        const meterArray = Object.keys(metersFromDB).map((key) => metersFromDB[key]);
-        setEnergyMeters(meterArray);
-      } else {
-        console.log("Nenhum medidor de energia encontrado para o usuário.");
-      }
-    } catch (error) {
-      console.error("Erro ao carregar medidores de energia:", error);
-    }
-  };
-
-  const handleAddDevice = async () => {
-    if (deviceName && deviceType && selectedMeter && estimatedUsageHours) {
-      const isDuplicate = devices.some(device => device.device_name === deviceName);
-      const isMeterInUse = devices.some(device => device.energy_meter_id === selectedMeter);
-
-      if (isDuplicate) {
-        alert('Dispositivo já existe.');
+      const userId = await AsyncStorage.getItem('userToken');
+      if (!userId) {
+        alert('Usuário não autenticado.');
         return;
       }
+
+      const response = await axios.get(`${BASE_URL}/devices`);
+
+      const filteredDevices = response.data.filter((device: Device) => device.user?.userId === userId);
+      console.log("Dispositivos filtrados para o usuário logado:", filteredDevices);
+      setDevices(filteredDevices);
+    } catch (error) {
+      console.error('Erro ao carregar dispositivos da API:', error);
+    }
+  };
+
+  const loadEnergyMetersFromAPI = async () => {
+    try {
+      const userId = await AsyncStorage.getItem('userToken');
+      if (!userId) {
+        alert('Usuário não autenticado.');
+        return;
+      }
+
+      const response = await axios.get(`${BASE_URL}/energy-meters`);
+      const filteredMeters = response.data.filter((meter: EnergyMeter) => meter.user?.userId === userId);
+      console.log("Medidores de energia filtrados para o usuário logado:", filteredMeters);
+      setEnergyMeters(filteredMeters);
+    } catch (error) {
+      console.error('Erro ao carregar medidores de energia da API:', error);
+    }
+  };
+
+
+  const handleAddDevice = async () => {
+    if (!deviceName || !deviceType || !selectedMeter || !estimatedUsageHours) {
+      alert('Preencha todos os campos.');
+      return;
+    }
+
+    try {
+      const userId = await AsyncStorage.getItem('userToken');
+      console.log("Dados recebidos:", userId);
+      if (!userId) {
+        alert('Usuário não autenticado.');
+        return;
+      }
+      const existingDevice = devices.find(
+        (device) =>
+          device.deviceName.toLowerCase() === deviceName.toLowerCase() &&
+          device.user?.userId === userId
+      );
+
+      if (existingDevice) {
+        alert('Já existe um dispositivo com este nome para o seu usuário.');
+        return;
+      }
+
+      const isMeterInUse = devices.some(
+        (device) => Number(device.energyMeter.energyMeterId) === Number(selectedMeter)
+      );
 
       if (isMeterInUse) {
         alert('Este medidor de energia já está em uso por outro dispositivo.');
@@ -121,114 +125,140 @@ const RegisterDevice = () => {
         usageInHours = usageInHours / 60;
       }
 
-      const newDevice: Device = {
-        device_id: uuidv4(),
-        device_name: deviceName,
-        device_type: deviceType,
-        energy_meter_id: selectedMeter,
-        estimated_usage_hours: usageInHours.toFixed(2), 
+      const newDevice = {
+        deviceName: deviceName.trim(),
+        deviceType: deviceType,
+        energyMeter: {
+          energyMeterId: selectedMeter,
+        },
+        estimatedUsageHours: usageInHours.toFixed(2),
+        user: {
+          userId: userId,
+        },
       };
 
-      try {
-        const userId = auth.currentUser?.uid;
-        if (!userId) {
-          throw new Error("Usuário não autenticado");
-        }
 
-        const deviceRef = ref(database, `users/${userId}/devices/${newDevice.device_id}`);
-        await set(deviceRef, newDevice);
+      console.log('Tentando adicionar dispositivo com os seguintes dados:', newDevice);
 
-        setDevices([...devices, newDevice]);
-        setDeviceName('');
-        setDeviceType('');
-        setSelectedMeter('');
-        setEstimatedUsageHours('');
-      } catch (error) {
-        console.error("Erro ao salvar dispositivo no Firebase:", error);
-      }
-    } else {
-      alert('Preencha todos os campos.');
+      const response = await axios.post(`${BASE_URL}/devices`, newDevice);
+      setDevices([...devices, response.data]);
+      setDeviceName('');
+      setDeviceType('');
+      setSelectedMeter(null);
+      setEstimatedUsageHours('');
+    } catch (error) {
+      const err = error as any
+      console.error('Erro ao adicionar dispositivo na API:', err.response?.data || err.message);
     }
   };
 
   const handleEditDevice = (device: Device) => {
-    const [value, unit] = device.estimated_usage_hours.split(' ');
+    const [value, unit] = device.estimatedUsageHours.split(' ');
     let usageValue = parseFloat(value);
     let usageUnit: 'Horas' | 'Minutos' = 'Horas';
 
     if (usageValue < 1) {
-        usageValue = Math.round(usageValue * 60); 
-        usageUnit = 'Minutos';
+      usageValue = Math.round(usageValue * 60);
+      usageUnit = 'Minutos';
     } else {
-        usageValue = parseFloat(value);
+      usageValue = parseFloat(value);
     }
 
     setModalData({
-        name: device.device_name,
-        type: device.device_type,
-        hours: usageValue.toString(), 
-        unit: usageUnit,
+      name: device.deviceName,
+      type: device.deviceType,
+      hours: usageValue.toString(),
+      unit: usageUnit,
     });
-    setEditingDeviceId(device.device_id);
-    setModalSelectedMeter(device.energy_meter_id);
+    setEditingDeviceId(device.deviceId);
+    setModalSelectedMeter(String(device.energyMeter.energyMeterId));
     setIsModalVisible(true);
-};
+  };
 
+  const handleSaveModal = (name: string, type: string, hours: string, unit: 'Horas' | 'Minutos', meter: string | number) => {
+    const isMeterInUse = devices.some(
+      (device) => device.energyMeter.energyMeterId === Number(meter) && device.deviceId !== editingDeviceId
+    );
 
-  const handleSaveModal = (name: string, type: string, hours: string, unit: 'Horas' | 'Minutos', meter: string) => {
-    handleUpdateDevice(name, type, hours, unit, meter);
+    if (isMeterInUse) {
+      Alert.alert(
+        'Aviso',
+        'Este medidor de energia já está em uso por outro dispositivo.',
+        [{ text: 'OK', style: 'cancel' }]
+      );
+      return;
+    }
+
+    handleUpdateDevice(name, type, hours, unit, Number(meter));
     setIsModalVisible(false);
   };
+
 
   const handleUpdateDevice = async (
     name: string,
     type: string,
     hours: string,
     unit: 'Horas' | 'Minutos',
-    selectedMeter: string 
+    selectedMeter: number
   ) => {
-    if (editingDeviceId) {
+    if (editingDeviceId !== null) {
+      const userId = await AsyncStorage.getItem('userToken');
+      if (!userId) {
+        alert('Usuário não autenticado.');
+        return;
+      }
+
+      const existingDevice = devices.find(
+        (device) =>
+          device.deviceName.toLowerCase() === name.toLowerCase() &&
+          device.user?.userId === userId &&
+          device.deviceId !== editingDeviceId
+      );
+
+      if (existingDevice) {
+        alert('Já existe um dispositivo com este nome para o seu usuário.');
+        return;
+      }
+
       let usageInHours = parseFloat(hours);
       if (unit === 'Minutos') {
         usageInHours = usageInHours / 60;
       }
 
       const updatedDevice: Device = {
-        device_id: editingDeviceId,
-        device_name: name,
-        device_type: type,
-        energy_meter_id: selectedMeter, 
-        estimated_usage_hours: usageInHours.toFixed(2),
+        deviceId: editingDeviceId,
+        deviceName: name.trim(),
+        deviceType: type,
+        energyMeter: {
+          energyMeterId: selectedMeter,
+        },
+        estimatedUsageHours: usageInHours.toFixed(2),
+        user: {
+          userId: userId,
+        },
       };
 
       try {
-        const userId = auth.currentUser?.uid;
-        if (!userId) {
-          throw new Error("Usuário não autenticado");
-        }
-
-        const deviceRef = ref(database, `users/${userId}/devices/${editingDeviceId}`);
-        await set(deviceRef, updatedDevice);
-
+        await axios.put(`${BASE_URL}/devices/${editingDeviceId}`, updatedDevice);
         const updatedDevices = devices.map((device) =>
-          device.device_id === editingDeviceId ? updatedDevice : device
+          device.deviceId === editingDeviceId ? updatedDevice : device
         );
         setDevices(updatedDevices);
         setDeviceName('');
         setDeviceType('');
-        setModalSelectedMeter('');
+        setModalSelectedMeter(null);
         setEstimatedUsageHours('');
         setEditingDeviceId(null);
       } catch (error) {
-        console.error("Erro ao atualizar dispositivo no Firebase:", error);
+        console.error('Erro ao atualizar dispositivo na API:', error);
       }
     }
   };
 
-  const handleDeleteDevice = async (deviceId: string) => {
+  const handleDeleteDevice = async (deviceId: number) => {
     Alert.alert(
       "Excluir Dispositivo",
-      "Você tem certeza que deseja excluir este dispositivo?",
+      "Você tem certeza que deseja excluir este dispositivo? Análises e relatórios associados também serão excluídos.",
       [
         {
           text: "Cancelar",
@@ -239,18 +269,25 @@ const RegisterDevice = () => {
           style: "destructive",
           onPress: async () => {
             try {
-              const userId = auth.currentUser?.uid;
-              if (!userId) {
-                throw new Error("Usuário não autenticado");
+              const deviceAnalysisResponse = await axios.get(`${BASE_URL}/device-analysis`);
+              const deviceAnalyses = deviceAnalysisResponse.data.filter((analysis: any) => analysis.device.deviceId === deviceId);
+
+              for (const analysis of deviceAnalyses) {
+
+                const reportResponse = await axios.get(`${BASE_URL}/reports`);
+                const reports = reportResponse.data.filter((report: any) => report.deviceAnalysis.deviceAnalysisId === analysis.deviceAnalysisId);
+
+                for (const report of reports) {
+                  await axios.delete(`${BASE_URL}/reports/${report.reportId}`);
+                }
+
+                await axios.delete(`${BASE_URL}/device-analysis/${analysis.deviceAnalysisId}`);
               }
-
-              const deviceRef = ref(database, `users/${userId}/devices/${deviceId}`);
-              await remove(deviceRef);
-
-              const filteredDevices = devices.filter((device) => device.device_id !== deviceId);
+              await axios.delete(`${BASE_URL}/devices/${deviceId}`);
+              const filteredDevices = devices.filter(device => device.deviceId !== deviceId);
               setDevices(filteredDevices);
             } catch (error) {
-              console.error("Erro ao excluir dispositivo no Firebase:", error);
+              console.error('Erro ao excluir dispositivo, análises ou relatórios na API:', error);
             }
           },
         },
@@ -260,19 +297,19 @@ const RegisterDevice = () => {
   };
 
   const renderItem = ({ item }: { item: Device }) => {
-    const meterName = energyMeters.find(meter => meter.meter_id === item.energy_meter_id)?.meter_name || 'Medidor não encontrado';
+    const meterName = energyMeters.find(meter => meter.energyMeterId === item.energyMeter.energyMeterId)?.meterName || 'Medidor não encontrado';
 
     return (
       <View style={styles.deviceItem}>
-        <Text style={styles.deviceName}>{item.device_name}</Text>
-        <Text style={styles.deviceType}>Tipo: {item.device_type}</Text>
+        <Text style={styles.deviceName}>{item.deviceName}</Text>
+        <Text style={styles.deviceType}>Tipo: {item.deviceType}</Text>
         <Text style={styles.deviceMeter}>Medidor: {meterName}</Text>
-        <Text style={styles.deviceUsage}>Tempo de Uso Diário: {item.estimated_usage_hours} hora(s)</Text>
+        <Text style={styles.deviceUsage}>Tempo de Uso Diário: {item.estimatedUsageHours} hora(s)</Text>
         <View style={styles.buttonsContainer}>
           <TouchableOpacity onPress={() => handleEditDevice(item)}>
             <Text style={styles.buttonText}>Editar</Text>
           </TouchableOpacity>
-          <TouchableOpacity onPress={() => handleDeleteDevice(item.device_id)}>
+          <TouchableOpacity onPress={() => handleDeleteDevice(item.deviceId)}>
             <Text style={styles.buttonText}>Excluir</Text>
           </TouchableOpacity>
         </View>
@@ -293,11 +330,13 @@ const RegisterDevice = () => {
 
       <Text style={styles.title}>Cadastro de Dispositivos</Text>
       <CustomPicker
-        selectedValue={selectedMeter}
-        onValueChange={setSelectedMeter}
-        options={energyMeters.map(meter => ({ label: meter.meter_name, value: meter.meter_id }))}
+        selectedValue={selectedMeter ?? ''}
+        onValueChange={(itemValue: string) => setSelectedMeter(itemValue)}
+        options={energyMeters.map(meter => ({ label: meter.meterName, value: String(meter.energyMeterId) }))}
         placeholder="Selecione um Medidor de Energia"
       />
+
+
       <Input placeText="Nome do Dispositivo" value={deviceName} onChangeText={setDeviceName} />
       <CustomPicker
         selectedValue={deviceType}
@@ -342,7 +381,7 @@ const RegisterDevice = () => {
       <FlatList
         data={devices}
         renderItem={renderItem}
-        keyExtractor={(item) => item.device_id}
+        keyExtractor={(item) => item.deviceId.toString()}
         style={styles.deviceList}
       />
 
@@ -352,12 +391,13 @@ const RegisterDevice = () => {
         deviceType={modalData.type}
         estimatedUsageHours={modalData.hours}
         timeUnit={modalData.unit}
-        selectedMeter={modalSelectedMeter}
+        selectedMeter={modalSelectedMeter ?? ''}
         energyMeters={energyMeters}
-        onMeterChange={setModalSelectedMeter}
-        onSave={handleSaveModal}
+        onMeterChange={(value) => setModalSelectedMeter(value)}
+        onSave={(name, type, hours, unit, meter) => handleSaveModal(name, type, hours, unit, Number(meter))}
         onClose={() => setIsModalVisible(false)}
       />
+
     </View>
   );
 };
@@ -438,4 +478,3 @@ const styles = StyleSheet.create({
 });
 
 export default RegisterDevice;
-

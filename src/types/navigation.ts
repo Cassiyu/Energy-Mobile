@@ -1,20 +1,64 @@
 import { StackNavigationProp } from '@react-navigation/stack';
 
 export interface Device {
-  device_id: string;
-  device_name: string;
-  device_type: string;
-  device_watts: string;
-  energy_meter_id: string;
+  deviceId: number;
+  deviceName: string;
+  deviceType: string;
+  energyMeter: {
+    energyMeterId: number,
+  };
+  estimatedUsageHours: string;
+  user: {
+    userId: string,
+  };
 }
 
 export interface EnergyMeter {
-  meter_id: string;
-  meter_name: string;
+  energyMeterId: number;
+  meterName: string;
+  user: {
+    userId: string,
+  };
+}
+
+export interface DeviceAnalysis {
+  deviceAnalysisId?: number;
+  deviceCurrentWatts: number;
+  energyUsageMonthly: number;
+  efficiencyClass: string;
+  device: {
+    deviceId: number;
+    deviceName: string;
+    deviceType: string;
+    estimatedUsageHours: string;
+  };
+  user: {
+    userId: string;
+  };
+}
+
+export interface Report {
+  reportId?: number;
+  generatedAt: string;
+  deviceAnalysis: {
+    deviceAnalysisId: number;
+    deviceCurrentWatts?: number;
+    energyUsageMonthly?: number;
+    efficiencyClass?: string;
+    device?: {
+      deviceId: number;
+      deviceName: string;
+      deviceType: string;
+      estimatedUsageHours: string;
+    };
+  };
+  user: {
+    userId: string;
+  };
 }
 
 export type RootStackParamsList = {
-  ReportGeneration : undefined;
+  ReportGeneration: undefined;
   EfficiencyAnalysis: undefined;
   RegisterDevice: undefined;
   RegisterMeter: undefined;

@@ -8,12 +8,12 @@ interface EditDeviceModalProps {
     deviceName: string;
     deviceType: string;
     estimatedUsageHours: string;
-    selectedMeter: string;
+    selectedMeter: number | string;
     timeUnit: 'Horas' | 'Minutos';
-    onMeterChange: (selectedMeter: string) => void;
+    onMeterChange: (selectedMeter: number | string) => void;
     onClose: () => void;
     onSave: (deviceName: string, deviceType: string, estimatedUsageHours: string, timeUnit: 'Horas' | 'Minutos', selectedMeter: string) => void;
-    energyMeters: { meter_id: string; meter_name: string }[];
+    energyMeters: { energyMeterId: number; meterName: string }[];
 }
 
 const EditDeviceModal: React.FC<EditDeviceModalProps> = ({
@@ -52,14 +52,12 @@ const EditDeviceModal: React.FC<EditDeviceModalProps> = ({
             <View style={styles.modalContainer}>
                 <View style={styles.modalContent}>
                     <Text style={styles.modalTitle}>Editar Dispositivo</Text>
-
                     <CustomPicker
-                        selectedValue={localSelectedMeter}
-                        onValueChange={(value) => setLocalSelectedMeter(value)}
-                        options={energyMeters.map(meter => ({ label: meter.meter_name, value: meter.meter_id }))}
+                        selectedValue={String(localSelectedMeter ?? '')}
+                        onValueChange={(value: string) => setLocalSelectedMeter(Number(value))}
+                        options={energyMeters.map(meter => ({ label: meter.meterName, value: String(meter.energyMeterId) }))}
                         placeholder="Selecione um Medidor"
                     />
-
                     <Input
                         placeText="Nome do Dispositivo"
                         value={localDeviceName}
@@ -103,9 +101,11 @@ const EditDeviceModal: React.FC<EditDeviceModalProps> = ({
                         </View>
                     </View>
                     <View style={styles.modalButtons}>
-                        <TouchableOpacity onPress={() => onSave(localDeviceName, localDeviceType, localEstimatedUsageHours, localTimeUnit, localSelectedMeter)}>
+                        <TouchableOpacity
+                            onPress={() => onSave(localDeviceName, localDeviceType, localEstimatedUsageHours, localTimeUnit, String(localSelectedMeter))}>
                             <Text style={styles.buttonText}>Salvar</Text>
                         </TouchableOpacity>
+
 
                         <TouchableOpacity onPress={onClose}>
                             <Text style={styles.buttonText}>Cancelar</Text>
