@@ -10,13 +10,9 @@
 - RM550323 - Paulo Barbosa Neto
 - RM552314 - Yasmin Araujo Santos Lopes
 
----------------------------------------------------
-
 ## Projeto
 
 DaVinci Energy é uma solução desenvolvida para residências e pequenos comércios, com foco no monitoramento e otimização do consumo de energia elétrica. Utilizando medidores de consumo, a plataforma oferece dados detalhados sobre o uso energético de cada dispositivo. Com base em classificações de eficiência energética, a plataforma ajuda os usuários a identificar possíveis falhas ou desgastes nos aparelhos, promovendo manutenção preventiva ou substituição quando necessário. Dessa forma, a DaVinci Energy contribui para a redução de desperdícios energéticos, maior eficiência no consumo e economia sustentável de energia.
-
----------------------------------------------------
 
 ## Aplicativo
 
@@ -65,3 +61,37 @@ O DaVinci Energy integra-se com uma API construída em Java Spring Boot, para ge
 - Tela para geração de relatórios de consumo de energia e classficação de eficiência de um dispositivo selecionado.
 - Os usuários podem excluir os relatórios gerados.
 
+## Passos para Rodar
+   
+1. **Clonar o Repositório do Projeto Mobile**:
+   ```bash
+   git clone https://github.com/Cassiyu/Energy-Mobile.git
+   ```
+   ```bash
+   cd Energy-Mobile
+   ```
+
+2. **Instalar Dependências**:
+   ```bash
+   npm install
+   ```
+
+3. **Configurar o Firebase Authentication**:
+   No arquivo `firebaseConfig.ts` configure a string de conexão para o Firebase Authentication.
+   ```javascript
+   {
+      apiKey: "sua-chave-api",
+      authDomain: "seu-projeto.firebaseapp.com",
+      databaseURL: "https://seu-projeto.firebaseio.com",
+      projectId: "seu-projeto-id",
+      storageBucket: "seu-projeto.appspot.com",
+      messagingSenderId: "seu-messaging-id",
+      appId: "seu-app-id"
+   }
+   ```
+
+4. **Rodar o Projeto**:
+   Inicie o Expo para rodar o projeto no emulador ou dispositivo físico.
+   ```bash
+   npm start
+   ```
