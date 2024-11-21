@@ -11,7 +11,7 @@ import { DeviceAnalysis, RootStackParamsList } from '../types/navigation';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import Button from '../components/Button';
 
-const BASE_URL = 'http://energy-davinci.azurewebsites.net';
+const BASE_URL = 'https://energy-davinci.azurewebsites.net';
 
 const EfficiencyAnalysis = () => {
   const [devicesAnalysis, setDevicesAnalysis] = useState<DeviceAnalysis[]>([]);

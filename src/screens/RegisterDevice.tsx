@@ -12,7 +12,7 @@ import axios from 'axios';
 import IconLeft from '../components/IconLeft';
 import EditDeviceModal from '../components/EditDeviceModal';
 
-const BASE_URL = 'http://energy-davinci.azurewebsites.net';
+const BASE_URL = 'https://energy-davinci.azurewebsites.net';
 
 const RegisterDevice = () => { 
   const [energyMeters, setEnergyMeters] = useState<EnergyMeter[]>([]);

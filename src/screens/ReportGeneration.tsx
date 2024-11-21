@@ -12,7 +12,7 @@ import classifyDeviceEfficiency from '../utils/efficiencyClassification';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import CustomPicker from '../components/CustomPicker';
 
-const BASE_URL = 'http://energy-davinci.azurewebsites.net';
+const BASE_URL = 'https://energy-davinci.azurewebsites.net';
 
 const ReportGeneration = () => {
     const [deviceAnalysis, setDeviceAnalysis] = useState<DeviceAnalysis[]>([]);

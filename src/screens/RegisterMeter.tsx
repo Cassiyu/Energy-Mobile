@@ -11,7 +11,7 @@ import EditMeterModal from '../components/EditMeterModal';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { EnergyMeter, RootStackParamsList } from '../types/navigation';
 
-const BASE_URL = 'http://energy-davinci.azurewebsites.net';
+const BASE_URL = 'https://energy-davinci.azurewebsites.net';
 
 const RegisterMeter = () => {
     const [meterName, setMeterName] = useState('');
