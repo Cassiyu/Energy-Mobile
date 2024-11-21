@@ -10,7 +10,7 @@ import Logo from '../components/Logo';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import axios from 'axios';
 
-const BASE_URL = 'http://192.168.0.147:8080';
+const BASE_URL = 'http://energy-davinci.azurewebsites.net';
 
 const SignUp = () => {
   const [email, setEmail] = useState('');

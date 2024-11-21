@@ -14,7 +14,7 @@
 
 ## Projeto
 
-DaVinci Energy é uma solução projetada para residências e pequenos comércios com o objetivo de monitorar, controlar e otimizar o consumo de energia elétrica. Usando dispositivos de medição de consumo e inteligência de dados, a plataforma fornece informações detalhadas sobre o uso de energia de cada dispositivo. Com base nas classificações de eficiência energética do Inmetro, ela orienta os usuários na escolha de dispositivos mais eficientes e no uso consciente e econômico de energia.
+DaVinci Energy é uma solução desenvolvida para residências e pequenos comércios, com foco no monitoramento e otimização do consumo de energia elétrica. Utilizando medidores de consumo, a plataforma oferece dados detalhados sobre o uso energético de cada dispositivo. Com base em classificações de eficiência energética, a plataforma ajuda os usuários a identificar possíveis falhas ou desgastes nos aparelhos, promovendo manutenção preventiva ou substituição quando necessário. Dessa forma, a DaVinci Energy contribui para a redução de desperdícios energéticos, maior eficiência no consumo e economia sustentável de energia.
 
 ---------------------------------------------------
 
@@ -22,9 +22,9 @@ DaVinci Energy é uma solução projetada para residências e pequenos comércio
 
 ### Funcionalidades Gerais
 - **Autenticação**: Os usuários podem fazer login ou se registrar usando Firebase Authentication.
+- **Integração com Banco de Dados da Azure**: A API é configurada para se conectar e interagir com o banco de dados hospedado na Azure.
 - **CRUD de Dispositivos e Medidores**: Permite registrar, atualizar, visualizar e excluir dispositivos e medidores de energia.
 - **Análises de Consumo e Relatórios**: Processa dados de consumo para fornecer análises detalhadas e relatórios.
-- **Integração com Banco de Dados da Azure**: A API é configurada para se conectar e interagir com o banco de dados hospedado na Azure.
 - **AsyncStorage**: Armazena localmente tokens de autenticação, permitindo salvar a sessão do usuário.
 
 ### Integração com a API Java Spring Boot

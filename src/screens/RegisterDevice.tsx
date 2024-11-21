@@ -12,11 +12,11 @@ import axios from 'axios';
 import IconLeft from '../components/IconLeft';
 import EditDeviceModal from '../components/EditDeviceModal';
 
-const BASE_URL = 'http://192.168.0.147:8080';
+const BASE_URL = 'http://energy-davinci.azurewebsites.net';
 
-const RegisterDevice = () => {
+const RegisterDevice = () => { 
   const [energyMeters, setEnergyMeters] = useState<EnergyMeter[]>([]);
-  const [selectedMeter, setSelectedMeter] = useState<string | null>(null);
+  const [selectedMeter, setSelectedMeter] = useState<number | string | null>(null);
   const [deviceName, setDeviceName] = useState('');
   const [deviceType, setDeviceType] = useState('');
   const [estimatedUsageHours, setEstimatedUsageHours] = useState('');
@@ -115,6 +115,9 @@ const RegisterDevice = () => {
         (device) => Number(device.energyMeter.energyMeterId) === Number(selectedMeter)
       );
 
+      console.log('Selected Meter 1:', selectedMeter, typeof selectedMeter);
+
+
       if (isMeterInUse) {
         alert('Este medidor de energia já está em uso por outro dispositivo.');
         return;
@@ -125,18 +128,21 @@ const RegisterDevice = () => {
         usageInHours = usageInHours / 60;
       }
 
+      let selectedMeterNumber = Number(selectedMeter);
+
       const newDevice = {
         deviceName: deviceName.trim(),
         deviceType: deviceType,
         energyMeter: {
-          energyMeterId: selectedMeter,
+          energyMeterId: selectedMeterNumber,
         },
-        estimatedUsageHours: usageInHours.toFixed(2),
+        estimatedUsageHours: parseFloat(usageInHours.toFixed(2)),
         user: {
           userId: userId,
         },
       };
 
+      console.log('Selected Meter 2:', selectedMeterNumber, typeof selectedMeterNumber);
 
       console.log('Tentando adicionar dispositivo com os seguintes dados:', newDevice);
 
@@ -330,7 +336,7 @@ const RegisterDevice = () => {
 
       <Text style={styles.title}>Cadastro de Dispositivos</Text>
       <CustomPicker
-        selectedValue={selectedMeter ?? ''}
+        selectedValue={String(selectedMeter) ?? ''}
         onValueChange={(itemValue: string) => setSelectedMeter(itemValue)}
         options={energyMeters.map(meter => ({ label: meter.meterName, value: String(meter.energyMeterId) }))}
         placeholder="Selecione um Medidor de Energia"
